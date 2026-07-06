@@ -1,0 +1,55 @@
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# uv
+.uv/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# IDE / editors
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+# Vendored / large assets (these come from setup.ps1, not Git)
+checkpoints/
+vendor/
+external/ml-sharp/
+
+# Test outputs and scratch
+scratch/
+test_output/
+sandbox/
+
+# Generated install report
+version_report.txt
+
+# OS detritus
+desktop.ini
+$RECYCLE.BIN/

@@ -1,0 +1,52 @@
+# =============================================================================
+# GaussianSplat_videoTools pipeline configuration
+# =============================================================================
+# Centralizes URLs, paths, and version pins so future maintenance is one file.
+# Read by setup.ps1 and the Python code at install/runtime.
+#
+# Standards: pure ASCII, no em-dashes or curly quotes.
+
+[sharp]
+# Apple ML-SHARP upstream repo. Pin to a specific commit to keep installs
+# reproducible. Update the commit when upgrading SHARP, never use "main".
+upstream_repo  = "https://github.com/apple/ml-sharp.git"
+upstream_commit = "PINME_AFTER_FIRST_KNOWN_GOOD_INSTALL"
+
+# SHARP checkpoint. Apple's CDN is the authoritative source; the mirrors
+# are tried first by setup.ps1 to avoid bandwidth and survive CDN outage.
+checkpoint_filename = "sharp_2572gikvuh.pt"
+checkpoint_sha256   = "FILL_IN_AFTER_FIRST_DOWNLOAD"
+checkpoint_size_mb  = 2048   # approximate, used for progress and disk-space check
+checkpoint_sources  = [
+    # Tried in order. First one to succeed wins.
+    # TrueNAS UNC path - update when MAKE pipeline storage is provisioned.
+    "\\\\TRUENAS\\path\\to\\splat_vendor\\sharp_2572gikvuh.pt",
+    # Personal Dropbox mirror - replace with your actual direct-download link.
+    # IMPORTANT: change "?dl=0" to "?dl=1" on Dropbox links for direct download.
+    "https://www.dropbox.com/scl/fi/XXXX/sharp_2572gikvuh.pt?dl=1",
+    # Apple CDN authoritative.
+    "https://ml-site.cdn-apple.com/models/sharp/sharp_2572gikvuh.pt",
+]
+
+[paths]
+# All paths are relative to the repo root unless explicitly absolute.
+# Override in environment variable GS_VIDEOTOOLS_<UPPER> if needed.
+sharp_install_dir   = "external/ml-sharp"
+checkpoint_dir      = "checkpoints"
+default_output_dir  = "output"
+default_temp_dir    = "scratch"
+
+[python]
+# CUDA wheel index for torch. The cu124 wheels are forward-compatible with
+# any NVIDIA driver supporting CUDA 12.4 or newer (drivers since ~Nov 2024).
+# Update only if Apple changes SHARP's torch requirement.
+torch_index_url     = "https://download.pytorch.org/whl/cu124"
+torch_version       = "2.8.0"
+torchvision_version = "0.23.0"
+
+[output]
+# Default filename convention for produced .ply sequences.
+# Must match what the V-Ray splat_sequence_loader MAXScript expects.
+ply_basename   = "Frame"
+ply_pad_digits = 4
+ply_extension  = "ply"
