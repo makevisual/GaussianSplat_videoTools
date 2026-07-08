@@ -103,6 +103,7 @@ def check_packages() -> None:
         "numpy":   None,   # version-agnostic check, just confirm importable
         "plyfile": None,
         "torch":   None,
+        "imageio": None,
     }
     for pkg in expected:
         try:
@@ -112,6 +113,13 @@ def check_packages() -> None:
         except ImportError as e:
             fail(f"{pkg} not importable: {e}")
 
+def check_exr_support() -> None:
+    header("EXR / imageio-freeimage")
+    try:
+        import imageio.plugins.freeimage
+        ok("imageio-freeimage plugin importable.")
+    except ImportError as e:
+        fail(f"imageio-freeimage not available: {e}")
 
 def check_cuda() -> None:
     header("CUDA / GPU")
