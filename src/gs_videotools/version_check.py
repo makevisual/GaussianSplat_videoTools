@@ -114,12 +114,26 @@ def check_packages() -> None:
             fail(f"{pkg} not importable: {e}")
 
 def check_exr_support() -> None:
-    header("EXR / imageio-freeimage")
+    header("EXR support (openexr-numpy)")
     try:
-        import imageio.plugins.freeimage
-        ok("imageio-freeimage plugin importable.")
-    except ImportError as e:
-        fail(f"imageio-freeimage not available: {e}")
+        from openexr_numpy import imread, imwrite
+        import numpy as np
+        import tempfile
+        import os as os_module
+        # Round-trip a tiny EXR to prove openexr-numpy is actually functional.
+        with tempfile.NamedTemporaryFile(suffix=".exr", delete=False) as f:
+            tmp = f.name
+        try:
+            imwrite(tmp, np.zeros((4, 4, 3), dtype=np.float32))
+            arr = imread(tmp)
+            if arr.shape == (4, 4, 3):
+                ok("EXR read/write verified via openexr-numpy.")
+            else:
+                fail(f"EXR round-trip produced wrong shape: {arr.shape}")
+        finally:
+            os_module.unlink(tmp)
+    except Exception as e:
+        fail(f"EXR support not functional: {e}")
 
 def check_cuda() -> None:
     header("CUDA / GPU")

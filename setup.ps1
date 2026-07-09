@@ -581,55 +581,6 @@ function Install-Checkpoint {
     Complete-Step "Checkpoint downloaded and verified"
 }
 
-function Install-ImageioFreeImage {
-    <#
-        Installs imageio-freeimage plus the FreeImage native binary.
-
-        Rationale:
-          - imageio itself is a light BSD-licensed package installed via
-            pyproject.toml. It handles PNG, JPG, TIFF natively.
-          - EXR support comes from the FreeImage plugin, which is spun out
-            into its own package (imageio-freeimage) due to licensing
-            considerations distinct from imageio proper.
-          - The plugin's native binary (~10MB) is fetched at first use OR
-            can be pre-fetched with imageio_download_bin. We pre-fetch here
-            so the pipeline works offline once installed.
-
-        Verifies via a small Python probe that EXR reading actually works.
-        If the probe fails, throw - we do NOT want a silent-fail here.
-    #>
-    Write-Step "Installing imageio-freeimage plugin (EXR support)"
-
-    # Idempotency: check whether EXR read already works.
-    $probe = "import imageio.v3 as iio; import imageio.plugins.freeimage; print('OK')"
-    $out = & uv run python -c $probe 2>&1
-    if ($LASTEXITCODE -eq 0 -and -not $Force) {
-        Write-Info "imageio-freeimage already functional."
-        Complete-Step "imageio-freeimage already present"
-        return
-    }
-
-    Write-Info "Installing imageio-freeimage package..."
-    & uv pip install "imageio-freeimage>=0.1,<1.0"
-    if ($LASTEXITCODE -ne 0) {
-        throw "imageio-freeimage install failed with exit code $LASTEXITCODE"
-    }
-
-    Write-Info "Downloading FreeImage native binary..."
-    & uv run python -c "import imageio.plugins.freeimage as f; f.download()"
-    if ($LASTEXITCODE -ne 0) {
-        throw "FreeImage binary download failed with exit code $LASTEXITCODE"
-    }
-
-    # Verify: try to import and confirm no errors.
-    $verify = & uv run python -c $probe 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-FailMsg "imageio-freeimage install completed but import fails: $verify"
-        throw "imageio-freeimage verification failed"
-    }
-    Complete-Step "imageio-freeimage installed and verified"
-}
-
 # =============================================================================
 # VERIFICATION SUMMARY
 # =============================================================================
@@ -698,7 +649,6 @@ try {
     Install-TorchCuda
     Install-SharpRepo
     Install-SharpPackage
-    Install-ImageioFreeImage
 
     if ($SkipCheckpoint) {
         Write-Step "Skipping checkpoint (per -SkipCheckpoint)"
