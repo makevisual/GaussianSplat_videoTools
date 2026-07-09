@@ -244,7 +244,17 @@ def convert_exr_to_png(exr_path: Path, png_path: Path, linear_to_srgb: bool) -> 
         )
 
     log.debug("EXR -> PNG: %s", exr_path.name)
-    img = exr_imread(str(exr_path))   # float32 HxWx3 by default
+    img = exr_imread(str(exr_path))
+    log.debug("  EXR shape: %s dtype: %s", img.shape, img.dtype)
+
+    # Defensive: a healthy EXR read should return at least a 2D image
+    # of nontrivial size. Degenerate shapes indicate the reader silently
+    # failed (this bit us with imageio+Pillow on EXR previously).
+    if img.ndim < 2 or img.shape[0] < 8 or img.shape[1] < 8:
+        raise RuntimeError(
+            f"EXR read returned degenerate shape {img.shape} for {exr_path}. "
+            "The reader is not correctly handling this file."
+        )
 
     # Handle alpha: drop it. SHARP ignores alpha, and PNGs with alpha can
     # confuse SHARP's input assumption of RGB.
@@ -262,12 +272,47 @@ def convert_exr_to_png(exr_path: Path, png_path: Path, linear_to_srgb: bool) -> 
         out[high] = (1.0 + a) * np.power(img[high], 1.0 / 2.4) - a
         img = out
 
-    # Clip and quantize to 16-bit unsigned.
-    img = np.clip(img, 0.0, 1.0)
-    img_16 = (img * 65535.0 + 0.5).astype(np.uint16)
+# Sanitize before quantization. Scene-linear EXRs regularly contain
+# =========================================================================
+    # !!! COLOR SPACE / BIT DEPTH DECISION - REVISIT LATER !!!
+    # =========================================================================
+    #
+    # We currently write 8-bit sRGB PNGs to feed SHARP. This is a compromise
+    # made to unblock the pipeline. TWO real limitations to address later:
+    #
+    # 1. BIT DEPTH: We're losing precision by casting to 8-bit. Pillow's PNG
+    #    writer (which imageio calls under the hood) does not properly support
+    #    16-bit RGB - it silently truncates or produces degenerate output.
+    #    To preserve 16-bit, we'd need to switch to numpngw (pure-Python PNG
+    #    writer with real 16-bit RGB support). SHARP itself can technically
+    #    accept 16-bit input; the loss here is at the write step, not the
+    #    inference step. However, SHARP was TRAINED on 8-bit imagery so the
+    #    upside of preserving 16-bit is limited unless SHARP is later
+    #    retrained or replaced.
+    #
+    # 2. COLOR SPACE: We assume the incoming EXR is already display-referred
+    #    (view-transformed). For scene-linear EXR from a renderer, this is
+    #    WRONG - SHARP will see very dark input and produce dim splats. To
+    #    fix, either:
+    #      a) Set linear_to_srgb=True in the pipeline config (applies a
+    #         simple gamma curve - fast, approximate).
+    #      b) For ACES pipelines, apply the ACES sRGB Output Display
+    #         Transform via OpenColorIO before this step (proper color
+    #         management, produces the target SHARP expects).
+    #
+    # For now: 8-bit PNG output, no color transform, everything downstream
+    # is functional but color-imperfect. See TROUBLESHOOTING.md for the
+    # workaround procedure.
+    # =========================================================================
 
+    img = img.astype(np.float32)
+    img = np.nan_to_num(img, nan=0.0, posinf=1.0, neginf=0.0)
+    img = np.clip(img, 0.0, 1.0)
+    img_8 = (img * 255.0 + 0.5).astype(np.uint8)
+
+    log.debug("Writing PNG: shape=%s dtype=%s", img_8.shape, img_8.dtype)
     png_path.parent.mkdir(parents=True, exist_ok=True)
-    iio.imwrite(png_path, img_16)   # PNG write via imageio's built-in Pillow path
+    iio.imwrite(png_path, img_8)
 
 def ensure_sharp_readable(input_path: Path, temp_dir: Path, linear_to_srgb: bool) -> Path:
     """Return a path SHARP can read. Converts EXR to PNG if needed.
@@ -279,7 +324,6 @@ def ensure_sharp_readable(input_path: Path, temp_dir: Path, linear_to_srgb: bool
         convert_exr_to_png(input_path, png_path, linear_to_srgb)
         return png_path
     return input_path
-
 
 # =============================================================================
 # SHARP inference
@@ -296,7 +340,7 @@ class InferenceConfig:
     """SHARP inference config."""
     python_exe: Path
     checkpoint_path: Optional[Path] = None   # None means SHARP uses its own cache lookup
-    sharp_module: str = "sharp.predict"
+    sharp_cli: str = "sharp"                 # SHARP CLI entry point installed in venv
     device: str = "cuda"
 
 
@@ -307,9 +351,14 @@ def run_sharp_on_image(image_path: Path, out_ply: Path, cfg: InferenceConfig) ->
     with tempfile.TemporaryDirectory(prefix="sharp_") as tmpdir:
         tmpdir_path = Path(tmpdir)
 
+# SHARP is a click-based CLI with `predict` and `render` subcommands.
+        # We invoke via the installed `sharp` executable rather than
+        # `python -m sharp.predict` because SHARP doesn't expose that module
+        # path; the module is `sharp.cli` and it's registered as an entry
+        # point named `sharp` in the venv Scripts folder.
         cmd = [
-            str(cfg.python_exe),
-            "-m", cfg.sharp_module,
+            cfg.sharp_cli,
+            "predict",
             "-i", str(image_path),
             "-o", str(tmpdir_path),
             "--device", cfg.device,
